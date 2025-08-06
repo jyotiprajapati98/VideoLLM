@@ -53,11 +53,32 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {
-        "status": "healthy",
-        "video_processor": video_processor is not None,
-        "chat_manager": chat_manager is not None
-    }
+    """Enhanced health check with detailed system status"""
+    try:
+        basic_health = {
+            "status": "healthy",
+            "video_processor_loaded": video_processor is not None,
+            "chat_manager_loaded": chat_manager is not None
+        }
+        
+        # Get detailed health if processors are loaded
+        if video_processor:
+            video_health = video_processor.get_health_status()
+            basic_health["video_processor_health"] = video_health
+        
+        if chat_manager:
+            # Add chat manager health if available
+            basic_health["chat_sessions_active"] = len(getattr(chat_manager, 'memory_store', {}))
+        
+        return basic_health
+        
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "video_processor_loaded": False,
+            "chat_manager_loaded": False
+        }
 
 @app.post("/upload-video")
 async def upload_video(file: UploadFile = File(...)):
@@ -83,11 +104,25 @@ async def upload_video(file: UploadFile = File(...)):
         with open(video_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        # Process video asynchronously
+        # Process video asynchronously with enhanced error handling
         print(f"Processing video for session {session_id}...")
-        analysis_result = await asyncio.get_event_loop().run_in_executor(
-            None, video_processor.process_video, video_path, temp_dir
-        )
+        try:
+            analysis_result = await asyncio.get_event_loop().run_in_executor(
+                None, video_processor.process_video, video_path, temp_dir
+            )
+        except Exception as processing_error:
+            # Clean up on processing failure
+            if os.path.exists(video_path):
+                os.remove(video_path)
+            if os.path.exists(upload_dir):
+                shutil.rmtree(upload_dir, ignore_errors=True)
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Video processing failed: {str(processing_error)}"
+            )
         
         # Initialize chat session
         chat_manager.initialize_session(session_id, analysis_result)
@@ -167,19 +202,71 @@ async def clear_session(session_id: str):
 
 @app.get("/sessions")
 async def list_sessions():
-    """List active sessions"""
+    """List active sessions with enhanced info"""
     try:
         # List directories in uploads folder
         upload_base = "uploads"
+        sessions_info = []
+        
         if os.path.exists(upload_base):
             sessions = [d for d in os.listdir(upload_base) if os.path.isdir(os.path.join(upload_base, d))]
-        else:
-            sessions = []
+            
+            for session_id in sessions:
+                session_path = os.path.join(upload_base, session_id)
+                temp_path = os.path.join("temp", session_id)
+                
+                # Get session info
+                session_info = {
+                    "session_id": session_id,
+                    "created": os.path.getctime(session_path),
+                    "has_temp_files": os.path.exists(temp_path),
+                    "temp_file_count": len(os.listdir(temp_path)) if os.path.exists(temp_path) else 0
+                }
+                sessions_info.append(session_info)
         
-        return {"active_sessions": sessions}
+        return {
+            "active_sessions": sessions_info,
+            "total_sessions": len(sessions_info)
+        }
         
     except Exception as e:
         print(f"Error listing sessions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/metrics")
+async def get_metrics():
+    """Get processing metrics and statistics"""
+    try:
+        metrics = {}
+        
+        if video_processor:
+            health_status = video_processor.get_health_status()
+            metrics["video_processor"] = health_status["processing_stats"]
+            metrics["model_health"] = {
+                "healthy": health_status["model_healthy"],
+                "model_name": health_status["model_name"],
+                "failures": health_status["model_failures"],
+                "memory_usage_mb": health_status["memory_usage_mb"]
+            }
+            metrics["system"] = health_status["system_health"]
+        
+        return metrics
+        
+    except Exception as e:
+        print(f"Error getting metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/reset-stats")
+async def reset_processing_stats():
+    """Reset processing statistics"""
+    try:
+        if video_processor:
+            video_processor.reset_stats()
+            return {"message": "Processing statistics reset successfully"}
+        else:
+            raise HTTPException(status_code=503, detail="Video processor not available")
+    except Exception as e:
+        print(f"Error resetting stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

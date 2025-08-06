@@ -14,7 +14,11 @@
       "Bash(redis-server:*)",
       "Bash(redis-cli:*)",
       "Bash(curl:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(./venv/bin/python:*)",
+      "Bash(streamlit run:*)",
+      "Bash(./venv/bin/streamlit run simple_ui.py)",
+      "Bash(cat:*)"
     ],
     "deny": []
   }
