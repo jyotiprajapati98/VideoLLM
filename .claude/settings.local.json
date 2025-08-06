@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(python3 -m pip install:*)",
+      "Bash(python3:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(./venv/bin/python -c \"import sys; sys.path.append(''src''); from src.models.video_processor import VideoProcessor; print(''VideoProcessor import successful'')\")",
+      "Bash(chmod:*)",
+      "Bash(wget:*)",
+      "Bash(pkill:*)",
+      "Bash(kill:*)",
+      "Bash(redis-server:*)",
+      "Bash(redis-cli:*)",
+      "Bash(curl:*)",
+      "Bash(ls:*)"
+    ],
+    "deny": []
+  }
+}
